@@ -17,17 +17,21 @@ from langchain.agents import (
   AgentType, load_tools, initialize_agent
 )
 from langchain.chat_models import ChatOpenAI
+from langchain.agents.chat.prompt import SUFFIX
 
 line_bot_api = LineBotApi(os.environ['LINE_CHANNEL_ACCESS_TOKEN'])
 handler = WebhookHandler(os.environ['LINE_CHANNEL_SECRET'])
 
 llm = ChatOpenAI(model_name="gpt-3.5-turbo", temperature=0)
 
-tools = load_tools(['google-serper', 'llm-math'], llm=llm)
+# set search tool name. "google-serper", "google-search", etc.
+search_tool = 'google-serper'
 
-suffix = """
-answer should be in Japanese. if possible, please provide 
-the URLs of the websites you used for your response.
+tools = load_tools([search_tool, 'llm-math'], llm=llm)
+
+suffix = SUFFIX + """
+Answer should be in Japanese. Include as much information as possible \
+to support your answer.
 """
 
 agent = initialize_agent(tools=tools,
