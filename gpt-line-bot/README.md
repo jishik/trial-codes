@@ -28,6 +28,9 @@ GCPのCloud Functionでwebhookの関数を実行します。
 * GOOGLE_CSE_ID
 * GOOGLE_API_KEY
 
+会話ログの履歴をGCPのFirestoreに保存しています。GCP ProjectのFirestore
+を有効にする必要があります。
+
 gcloudコマンドで、Cloud Functionをデプロイするには、以下のコマンドを
 実行します。
 ```

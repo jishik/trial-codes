@@ -1,5 +1,9 @@
 functions-framework==3.*
-line-bot-sdk
-openai==0.27.2
-google-api-python-client==2.86.0
-langchain==0.0.157
+line-bot-sdk==3.1.0
+openai==0.27.8
+google-api-python-client==2.92.0
+google-cloud-logging==3.6.0
+google-cloud-firestore==2.11.1
+arxiv==1.4.8
+xmltodict==0.13.0
+langchain==0.0.261
