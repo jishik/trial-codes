@@ -68,7 +68,7 @@ system_message = """あなたは優秀なAIアシスタントです。回答の�
 def get_agent_executor(event: MessageEvent) -> AgentExecutor:
   sess_id = get_sess_id(event)
   message_history = FirestoreChatMessageHistory(collection_name="gpt_line_bot",
-                                                session_id=datetime.date.today().strftime("%Y-%d-%m"),
+                                                session_id=datetime.date.today().strftime("%Y-%m-%d"),
                                                 user_id=sess_id,
                                                 firestore_client=db)
   memory = ConversationBufferWindowMemory(memory_key="memory",
