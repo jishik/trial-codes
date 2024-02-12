@@ -3,6 +3,7 @@ import datetime
 import os
 import json
 import secrets
+import traceback
 
 from flask import abort
 
@@ -19,17 +20,15 @@ from linebot.models import (
 from google.cloud import logging
 from google.cloud import firestore
 
-import langchain
-langchain.debug = True
-
+from langchain import hub
 from langchain.agents import (
-  AgentType, load_tools, initialize_agent
+  AgentExecutor,
+  create_openai_tools_agent,
+  load_tools
 )
-from langchain.chat_models import ChatOpenAI
-from langchain.schema import SystemMessage
-from langchain.prompts import MessagesPlaceholder
+from langchain_openai import ChatOpenAI
 from langchain.memory.buffer_window import ConversationBufferWindowMemory
-from langchain.memory.chat_message_histories import FirestoreChatMessageHistory
+from langchain_community.chat_message_histories import FirestoreChatMessageHistory
 from langchain.agents import AgentExecutor
 
 logging_client = logging.Client()
@@ -40,13 +39,7 @@ db = firestore.Client()
 
 line_bot_api = LineBotApi(os.environ['LINE_CHANNEL_ACCESS_TOKEN'])
 handler = WebhookHandler(os.environ['LINE_CHANNEL_SECRET'])
-model_name = os.environ.get('CHAT_MODEL_NAME', default="gpt-3.5-turbo-0613")
-
-llm = ChatOpenAI(model_name=model_name, temperature=0, request_timeout=120)
-
-# set search tool name. "google-serper", "google-search", etc.
-search_tool = 'google-serper'
-tools = load_tools([search_tool, 'pubmed', 'arxiv', 'llm-math'], llm=llm)
+model_name = os.environ.get('CHAT_MODEL_NAME', default="gpt-3.5-turbo")
 
 def get_sess_id(event:MessageEvent) -> str:
   sess_id = "sess" + secrets.token_hex(16)
@@ -58,35 +51,18 @@ def get_sess_id(event:MessageEvent) -> str:
     sess_id = event.source.type + event.source.room_id
   return sess_id
 
-system_message = """あなたは優秀なAIアシスタントです。回答の手順は以下のとおりです。
+def get_agent_executor(memory=None) -> AgentExecutor:
+  llm = ChatOpenAI(model_name=model_name, temperature=0, request_timeout=120)
 
-1. 回答に必要な情報を得るために、適切な関数を実行して、必要な情報を得ます。
-2. 1.で得られた情報をもとに、依頼や質問に対する回答を作成します。
-3. 回答に必要な情報が得られない場合や、有害な回答となる場合は、回答できない理由を述べて謝罪します。
-"""
+  # set search tool name. "google-serper", "google-search", etc.
+  search_tool = 'google-serper'
+  tools = load_tools([search_tool, 'pubmed', 'arxiv', 'llm-math'], llm=llm)
+  
+  prompt = hub.pull("hwchase17/openai-tools-agent")
 
-def get_agent_executor(event: MessageEvent) -> AgentExecutor:
-  sess_id = get_sess_id(event)
-  message_history = FirestoreChatMessageHistory(collection_name="gpt_line_bot",
-                                                session_id=datetime.date.today().strftime("%Y-%m-%d"),
-                                                user_id=sess_id,
-                                                firestore_client=db)
-  memory = ConversationBufferWindowMemory(memory_key="memory",
-                                          k=5,
-                                          return_messages=True,
-                                          chat_memory=message_history)
-
-  agent_kwargs = {
-    "system_message": SystemMessage(content=system_message),
-    "extra_prompt_messages": [MessagesPlaceholder(variable_name="memory")]
-  }
-
-  agent_executor = initialize_agent(tools=tools,
-                                    llm=llm,
-                                    agent=AgentType.OPENAI_MULTI_FUNCTIONS,
-                                    agent_kwargs=agent_kwargs,
-                                    memory=memory,
-                                    verbose=True)
+  agent = create_openai_tools_agent(llm, tools, prompt)
+  
+  agent_executor = AgentExecutor(agent=agent, tools=tools, memory=memory, verbose=True)
   
   return agent_executor
 
@@ -126,9 +102,23 @@ def main(request):
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
   try:
-    agent_executor = get_agent_executor(event)
-    response = agent_executor.run(input=event.message.text)
+    sess_id = get_sess_id(event)
+    message_history = FirestoreChatMessageHistory(collection_name="gpt_line_bot",
+                                                session_id=datetime.date.today().strftime("%Y-%m-%d"),
+                                                user_id=sess_id,
+                                                firestore_client=db)
+    memory = ConversationBufferWindowMemory(k=10,
+                                            chat_memory=message_history,
+                                            input_key="input")
+    
+    agent_executor = get_agent_executor(memory)
+    response = agent_executor.invoke({
+                                      "input": event.message.text,
+                                      "chat_history": memory.buffer_as_messages
+                                      })
+    response = response["output"]
   except Exception as e:
+    traceback.print_exc()
     response = str(e)
     print(response)
     if not response.startswith("Could not parse LLM output: "):

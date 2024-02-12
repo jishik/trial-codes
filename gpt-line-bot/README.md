@@ -41,5 +41,6 @@ gcloud functions deploy gpt-line-bot \
 --entry-point=main \
 --trigger-http \
 --region=<region> \
---allow-unauthenticated
+--allow-unauthenticated \
+--project=<project>
 ```
